@@ -223,11 +223,33 @@ class VectorProcessor:
             print(f"[VECTOR] Generating backing: {backing_layer_count} layers ({thickness_mm}mm)")
             backing_meshes = []
             backing_height = backing_layer_count * layer_h
+
+            # Extrude each clipped shape individually instead of unioned silhouette.
+            # Union creates a 60k+ vertex polygon that is extremely slow to triangulate.
+            # Individual extrusions are fast (~0.7s for 355 shapes vs 120s for union).
+            backing_polys = []
+            for shape in clipped_shapes:
+                geom = shape["geometry"]
+                if geom is None or geom.is_empty:
+                    continue
+                if hasattr(geom, "geoms"):
+                    backing_polys.extend(
+                        p for p in geom.geoms
+                        if not p.is_empty and hasattr(p, "exterior")
+                    )
+                elif hasattr(geom, "exterior"):
+                    backing_polys.append(geom)
+
+            t_back = time.perf_counter()
             backing_meshes.extend(
-                self._extrude_geometry(silhouette, height=backing_height,
-                                       z_offset=backing_z_start, scale=scale_factor,
-                                       extrude_cache=extrude_cache)
+                self._extrude_geometry(
+                    MultiPolygon(backing_polys),
+                    height=backing_height,
+                    z_offset=backing_z_start, scale=scale_factor,
+                    extrude_cache=extrude_cache
+                )
             )
+            print(f"[VECTOR] Backing extruded from {len(backing_polys)} individual polygons in {time.perf_counter()-t_back:.1f}s")
             if backing_meshes:
                 if separate_backing:
                     # Export backing as a standalone "Board" object (mat_id=0 → White)
@@ -660,7 +682,12 @@ class VectorProcessor:
                     if not combined.is_valid:
                         combined = combined.buffer(0)
                     if not combined.is_empty:
-                        raw_shapes.append({"poly": combined, "color": rgb})
+                        if hasattr(combined, "geoms"):
+                            for geom in combined.geoms:
+                                if not geom.is_empty and hasattr(geom, "exterior"):
+                                    raw_shapes.append({"poly": geom, "color": rgb})
+                        else:
+                            raw_shapes.append({"poly": combined, "color": rgb})
                         sampled_any = True
 
             if sampled_any:
@@ -732,20 +759,19 @@ class VectorProcessor:
         if geometry is None or geometry.is_empty:
             return meshes
 
-        polys = geometry.geoms if hasattr(geometry, "geoms") else [geometry]
+        polys = [p for p in (geometry.geoms if hasattr(geometry, "geoms") else [geometry])
+                 if not p.is_empty and hasattr(p, "exterior")]
 
-        for poly in polys:
-            if poly.is_empty:
-                continue
-            if not hasattr(poly, "exterior"):
-                continue
+        if not polys:
+            return meshes
+
+        max_workers = min(len(polys), os.cpu_count() or 4)
+
+        def _extrude_one(poly):
             try:
                 cache_key = None
                 cached_base = None
                 if extrude_cache is not None:
-                    # Key excludes height: cache unit-height (h=1) base mesh,
-                    # then scale Z per call. Avoids re-triangulating the same
-                    # polygon when it appears in multiple layers at different heights.
                     cache_key = (poly.wkb, round(float(scale), 8))
                     cached_base = extrude_cache.get(cache_key)
 
@@ -760,10 +786,22 @@ class VectorProcessor:
                 m = m_base.copy()
                 m.apply_scale([1.0, 1.0, float(height)])
                 m.apply_translation([0, 0, z_offset])
-                meshes.append(m)
+                return m
             except Exception as e:
                 print(f"[VECTOR] Warning: Failed to extrude polygon: {e}")
-                continue
+                return None
+
+        if len(polys) > 4 and max_workers > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                for m in pool.map(_extrude_one, polys):
+                    if m is not None:
+                        meshes.append(m)
+        else:
+            for poly in polys:
+                m = _extrude_one(poly)
+                if m is not None:
+                    meshes.append(m)
 
         return meshes
 
