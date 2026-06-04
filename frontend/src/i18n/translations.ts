@@ -459,7 +459,7 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "底板颜色",
     en: "Backing Color",
   },
-  cal_generate_btn: {
+  cal_generate_btn_short: {
     zh: "🚀 生成",
     en: "🚀 Generate",
   },
@@ -677,7 +677,7 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "❌ 请先选择替换颜色",
     en: "❌ Select a replacement color",
   },
-  palette_replaced: {
+  palette_replaced_status: {
     zh: "✅ 已替换 {src} → {dst}",
     en: "✅ Replaced {src} → {dst}",
   },

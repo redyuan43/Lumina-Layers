@@ -59,8 +59,8 @@ export function getButtonLabel(
 ): string {
   if (hasSlicers) {
     return threemfDiskPath
-      ? t("slicer_open_in").replace("{name}", slicerName ?? "")
-      : t("slicer_generate_open_in").replace("{name}", slicerName ?? "");
+      ? t("slicer_open_in").replace("{name}", () => slicerName ?? "")
+      : t("slicer_generate_open_in").replace("{name}", () => slicerName ?? "");
   }
   return threemfDiskPath ? t("slicer_download_3mf") : t("slicer_generate_download");
 }

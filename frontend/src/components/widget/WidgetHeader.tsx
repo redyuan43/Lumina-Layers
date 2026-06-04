@@ -17,7 +17,6 @@ interface WidgetHeaderProps {
 }
 
 export function WidgetHeader({
-  widgetId,
   titleKey,
   collapsed,
   onToggleCollapse,

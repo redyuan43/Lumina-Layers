@@ -38,6 +38,8 @@ describe("convertPreview", () => {
     modeling_mode: ModelingMode.HIGH_FIDELITY,
     quantize_colors: 48,
     enable_cleanup: true,
+    hue_weight: 0,
+    is_dark: false,
   };
 
   it("builds correct FormData and calls POST /convert/preview", async () => {
@@ -100,6 +102,8 @@ describe("convertGenerate", () => {
     modeling_mode: ModelingMode.PIXEL,
     quantize_colors: 64,
     enable_cleanup: false,
+    hue_weight: 0,
+    is_dark: false,
     spacer_thick: 1.2,
     structure_mode: StructureMode.DOUBLE_SIDED,
     separate_backing: true,

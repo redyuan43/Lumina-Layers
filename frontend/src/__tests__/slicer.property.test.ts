@@ -575,6 +575,14 @@ describe("Property 6: 品牌配色映射完整性", () => {
 
 import { getButtonLabel } from "../components/sections/SlicerSelector";
 
+const slicerTestT = (key: string): string =>
+  ({
+    slicer_open_in: "在 {name} 中打开",
+    slicer_generate_open_in: "生成并在 {name} 中打开",
+    slicer_download_3mf: "下载 3MF",
+    slicer_generate_download: "生成并下载",
+  })[key] ?? key;
+
 /**
  * Feature: slicer-launch-integration, Property 4: SlicerSelector 按钮文案反映 3MF 状态
  * **Validates: Requirements 3.2**
@@ -595,7 +603,7 @@ describe("Property 4: SlicerSelector 按钮文案反映 3MF 状态", () => {
   it("hasSlicers=true + non-null threemfDiskPath → '在 {name} 中打开'", () => {
     fc.assert(
       fc.property(diskPathArb, slicerNameArb, (path, name) => {
-        const label = getButtonLabel(true, path, name);
+        const label = getButtonLabel(true, path, name, slicerTestT);
         return label === `在 ${name} 中打开`;
       }),
       { numRuns: 100 }
@@ -605,7 +613,7 @@ describe("Property 4: SlicerSelector 按钮文案反映 3MF 状态", () => {
   it("hasSlicers=true + null threemfDiskPath → '生成并在 {name} 中打开'", () => {
     fc.assert(
       fc.property(slicerNameArb, (name) => {
-        const label = getButtonLabel(true, null, name);
+        const label = getButtonLabel(true, null, name, slicerTestT);
         return label === `生成并在 ${name} 中打开`;
       }),
       { numRuns: 100 }
@@ -618,7 +626,7 @@ describe("Property 4: SlicerSelector 按钮文案反映 3MF 状态", () => {
         diskPathArb,
         fc.option(slicerNameArb, { nil: null }),
         (path, name) => {
-          const label = getButtonLabel(false, path, name);
+          const label = getButtonLabel(false, path, name, slicerTestT);
           return label === "下载 3MF";
         }
       ),
@@ -631,7 +639,7 @@ describe("Property 4: SlicerSelector 按钮文案反映 3MF 状态", () => {
       fc.property(
         fc.option(slicerNameArb, { nil: null }),
         (name) => {
-          const label = getButtonLabel(false, null, name);
+          const label = getButtonLabel(false, null, name, slicerTestT);
           return label === "生成并下载";
         }
       ),

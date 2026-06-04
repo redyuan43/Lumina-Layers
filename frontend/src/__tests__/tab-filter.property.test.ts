@@ -39,10 +39,6 @@ describe('Granular Floating Widgets — Property-Based Tests', () => {
           // 1. The filtered set should contain exactly the widgets in TAB_WIDGET_MAP[tabId]
           expect(new Set(filteredIds)).toEqual(new Set(expectedWidgetIds));
 
-          // 2. No widget from another tab should be included
-          const otherTabWidgetIds = ALL_TAB_IDS
-            .filter((t) => t !== tabId)
-            .flatMap((t) => TAB_WIDGET_MAP[t]);
           for (const id of filteredIds) {
             // A widget may appear in the current tab only; verify it's in expectedWidgetIds
             expect(expectedWidgetIds).toContain(id);

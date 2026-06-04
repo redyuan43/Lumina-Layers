@@ -911,6 +911,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           quantize_colors: state.quantize_colors,
           enable_cleanup: state.enable_cleanup,
           hue_weight: state.hue_weight,
+          is_dark: useSettingsStore.getState().theme === "dark",
           spacer_thick: state.spacer_thick,
           structure_mode: state.structure_mode,
           separate_backing: state.separate_backing,

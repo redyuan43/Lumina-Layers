@@ -162,6 +162,7 @@ describe('Widget Workspace Property-Based Tests', () => {
               visible: true,
               snapEdge: edge,
               stackOrder: i,
+              expandedHeight: EXPANDED_HEIGHT,
             }));
 
             const positions = computeStackPositions(widgets, edge, containerWidth);
