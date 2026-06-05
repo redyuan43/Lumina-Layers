@@ -232,6 +232,58 @@ class TestRunLengthExtrude:
 
         assert len(result) == 0
 
+    def test_svg_single_sided_face_up_for_8color(self, tmp_path):
+        """Single-sided vector exports should print recipe[0] last/highest.
+
+        The user-facing convention is recipe[0] = viewing surface and
+        recipe[N-1] = innermost layer near the backing.  A face-up 3MF must
+        therefore place recipe[N-1] directly above the backing and recipe[0]
+        at the highest optical Z.
+        """
+        svg_file = tmp_path / "dummy.svg"
+        svg_file.write_text("<svg/>", encoding="utf-8")
+
+        vp = object.__new__(VectorProcessor)
+        vp.color_mode = "8-Color Max"
+        vp.sampling_precision = 0.05
+
+        class _DummyImageProcessor:
+            lut_rgb = [0]
+            ref_stacks = [[0, 0, 0, 0, 0]]
+
+        vp.img_processor = _DummyImageProcessor()
+
+        geom = box(0, 0, 10, 10)
+        matched = [{"geometry": geom, "recipe": [1, 2, 3, 4, 5], "color": (0, 0, 0)}]
+
+        def fake_extrude(_geom, height, z_offset, scale, extrude_cache=None):
+            mesh = _ve.trimesh.creation.box(extents=[1.0, 1.0, height])
+            mesh.apply_translation([0.0, 0.0, z_offset + height / 2.0])
+            return [mesh]
+
+        with (
+            patch.object(VectorProcessor, "_parse_svg", return_value=([{"poly": geom, "color": (0, 0, 0)}], 1.0, (0, 0, 10, 10))),
+            patch.object(VectorProcessor, "_clip_occlusion", return_value=([{"geometry": geom, "color": (0, 0, 0)}], geom)),
+            patch.object(VectorProcessor, "_match_colors", return_value=matched),
+            patch.object(VectorProcessor, "_extrude_geometry", side_effect=fake_extrude),
+        ):
+            scene = vp.svg_to_mesh(
+                str(svg_file),
+                target_width_mm=10.0,
+                thickness_mm=1.6,
+                structure_mode="Single-sided",
+                separate_backing=True,
+            )
+
+        z_by_name = {
+            name: tuple(scene.geometry[name].bounds[:, 2])
+            for name in scene.geometry.keys()
+        }
+
+        assert z_by_name["Board"] == pytest.approx((0.0, 1.6))
+        assert z_by_name["Slot 6 (Red)"] == pytest.approx((1.6, 1.68))
+        assert z_by_name["Slot 2 (Cyan)"] == pytest.approx((1.92, 2.0))
+
 
 # =====================================================================
 # 3. Output ordering

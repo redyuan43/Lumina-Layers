@@ -183,19 +183,21 @@ class VectorProcessor:
         # === Stage 5: Run-length extrude per channel ===
         layer_h = PrinterConfig.LAYER_HEIGHT
         extrude_cache = {}
-        is_5color = "5-Color Extended" in self.color_mode
         backing_layer_count = max(1, int(round(thickness_mm / layer_h)))
         backing_height = backing_layer_count * layer_h
+        is_double_sided = "双面" in structure_mode or "Double" in structure_mode
+        is_single_sided_face_up = not is_double_sided
 
         t0 = time.perf_counter()
-        if is_5color:
-            # Face-up: reversed optical layers stacked above the backing
+        if is_single_sided_face_up:
+            # Face-up single-sided exports print the backing first, then the
+            # optical stack from innermost to viewing-surface layer.
             meshes_by_slot = self._run_length_extrude(
                 matched_shapes, num_layers, layer_h, num_channels,
                 slot_names, scale_factor, extrude_cache=extrude_cache,
                 face_up=True, optical_z_base=backing_height,
             )
-            print(f"[VECTOR] 5-Color face-up: {num_layers} optical layers above {backing_height:.2f}mm backing")
+            print(f"[VECTOR] Single-sided face-up: {num_layers} optical layers above {backing_height:.2f}mm backing")
         else:
             meshes_by_slot = self._run_length_extrude(
                 matched_shapes, num_layers, layer_h, num_channels,
@@ -214,7 +216,7 @@ class VectorProcessor:
             ]
             silhouette = unary_union(all_geoms) if all_geoms else None
 
-        if is_5color:
+        if is_single_sided_face_up:
             backing_z_start = 0  # face-up: backing at print-bed level
         else:
             backing_z_start = num_layers * layer_h
@@ -269,7 +271,6 @@ class VectorProcessor:
 
         # === Stage 7: Double-sided structure ===
         t0 = time.perf_counter()
-        is_double_sided = "双面" in structure_mode or "Double" in structure_mode
         if is_double_sided:
             print("[VECTOR] Adding mirrored color layers (double-sided mode)...")
             top_z_start = backing_z_start + backing_layer_count * layer_h
