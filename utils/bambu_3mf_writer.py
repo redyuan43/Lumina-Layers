@@ -59,11 +59,11 @@ class BambuStudio3MFWriter:
         """
         self.output_path = output_path
         self.settings = {**self.DEFAULT_SETTINGS, **(settings or {})}
-        self.objects = []  # List of (mesh, name, color_rgb) tuples
+        self.objects = []  # List of (mesh, name, color_rgb, extruder_id) tuples
         self.object_id_counter = 1
         self.color_mode = color_mode
         
-    def add_mesh(self, mesh: trimesh.Trimesh, name: str, color_rgb: tuple):
+    def add_mesh(self, mesh: trimesh.Trimesh, name: str, color_rgb: tuple, extruder_id: Optional[int] = None):
         """
         Add a mesh object to the scene.
         
@@ -71,6 +71,7 @@ class BambuStudio3MFWriter:
             mesh: Trimesh object
             name: Object name (e.g., "White", "Cyan", "Magenta")
             color_rgb: RGB color tuple (0-255)
+            extruder_id: 1-based BambuStudio filament slot. Defaults to object order.
         """
         if mesh is None:
             raise ValueError(f"[BAMBU_3MF] Cannot add mesh '{name}': mesh is None")
@@ -84,7 +85,13 @@ class BambuStudio3MFWriter:
                 f"[BAMBU_3MF] Cannot add mesh '{name}': empty geometry (v={v_count}, f={f_count})"
             )
 
-        self.objects.append((mesh, name, color_rgb))
+        if extruder_id is None:
+            extruder_id = len(self.objects) + 1
+        extruder_id = int(extruder_id)
+        if extruder_id < 1:
+            raise ValueError(f"[BAMBU_3MF] Cannot add mesh '{name}': extruder_id must be >= 1")
+
+        self.objects.append((mesh, name, color_rgb, extruder_id))
         
     def export(self):
         """
@@ -210,7 +217,7 @@ class BambuStudio3MFWriter:
             f.write('<model xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" unit="millimeter" xml:lang="en-US" requiredextensions="p">\n')
             f.write(' <resources>\n')
 
-            for idx, (mesh, name, color_rgb) in enumerate(self.objects, start=1):
+            for idx, (mesh, name, color_rgb, extruder_id) in enumerate(self.objects, start=1):
                 f.write(f'  <object id="{idx}" type="model">\n')
                 f.write('   <mesh>\n')
                 f.write('    <vertices>\n')
@@ -403,14 +410,14 @@ class BambuStudio3MFWriter:
         
         # Add a separate part for EACH object with MINIMAL metadata
         # No matrix/position info - let BambuStudio auto-center the model
-        for idx, (mesh, name, color_rgb) in enumerate(self.objects, start=1):
+        for idx, (mesh, name, color_rgb, extruder_id) in enumerate(self.objects, start=1):
             part = ET.SubElement(obj_elem, 'part', attrib={'id': str(idx), 'subtype': 'normal_part'})
             
             # Part name
             ET.SubElement(part, 'metadata', attrib={'key': 'name', 'value': name})
             
             # CRITICAL: Extruder assignment (this is what matters for color mapping)
-            ET.SubElement(part, 'metadata', attrib={'key': 'extruder', 'value': str(idx)})
+            ET.SubElement(part, 'metadata', attrib={'key': 'extruder', 'value': str(extruder_id)})
         
         # Add plate info with filament mapping
         plate = ET.SubElement(config, 'plate')
@@ -487,13 +494,23 @@ class BambuStudio3MFWriter:
         """
         arrays = {}
         
-        # CRITICAL: Build color arrays from ACTUAL meshes added, not from color_conf
-        # This ensures colors match the actual objects in the model
+        slot_colors = []
+        for idx in range(num_colors):
+            preview = color_conf.get('preview', {}).get(idx, [200, 200, 200, 255])
+            slot_colors.append(tuple(preview[:3]))
+
+        # CRITICAL: Build colors by explicit extruder slot, not object order.
+        # Auxiliary geometry such as Backing/Board may be a separate object while
+        # still sharing the white filament slot.
+        for mesh, name, color_rgb, extruder_id in self.objects:
+            slot_idx = extruder_id - 1
+            if 0 <= slot_idx < num_colors:
+                slot_colors[slot_idx] = tuple(color_rgb[:3])
+
         arrays['filament_colour'] = []
         arrays['filament_multi_colour'] = []
         arrays['default_filament_colour'] = []
-        for mesh, name, color_rgb in self.objects:
-            # Convert RGB to hex
+        for color_rgb in slot_colors:
             hex_color = f"#{color_rgb[0]:02X}{color_rgb[1]:02X}{color_rgb[2]:02X}"
             arrays['filament_colour'].append(hex_color)
             arrays['filament_multi_colour'].append(hex_color)
@@ -533,7 +550,9 @@ class BambuStudio3MFWriter:
         
         # Get color configuration
         color_conf = ColorSystem.get(self.color_mode)
-        num_colors = len(self.objects)  # Use actual number of objects
+        mode_capacity = len(color_conf['slots'])
+        max_extruder_id = max((obj[3] for obj in self.objects), default=mode_capacity)
+        num_colors = max(mode_capacity, max_extruder_id)
         
         # Load complete base configuration template (538+ keys)
         settings = self._get_base_config_template()
@@ -642,7 +661,7 @@ class BambuStudio3MFWriter:
             raw.write(b'<model xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" unit="millimeter" xml:lang="en-US" requiredextensions="p">\n')
             raw.write(b' <resources>\n')
 
-            for idx, (mesh, name, color_rgb) in enumerate(self.objects, start=1):
+            for idx, (mesh, name, color_rgb, extruder_id) in enumerate(self.objects, start=1):
                 raw.write(f'  <object id="{idx}" type="model">\n'.encode())
                 raw.write(b'   <mesh>\n    <vertices>\n')
                 self._write_vertices_bytes(raw, mesh.vertices)
@@ -695,14 +714,19 @@ def export_scene_with_bambu_metadata(scene: trimesh.Scene, output_path: str,
     if not slot_names:
         raise ValueError("[BAMBU_3MF] slot_names is empty - no exportable objects")
 
-    # CRITICAL: Use actual number of colors, not the LUT color mode
-    # This ensures filament list matches actual model parts
+    # Preserve the requested color mode capacity. Object count is not filament
+    # count: Backing/Board can be separate geometry while reusing slot 1.
     num_used_colors = len(slot_names)
-
-    # If caller already specified a specific subtype (CMYW/RYBW), keep it;
-    # otherwise infer from the number of colors used.
-    if color_mode in ('CMYW', 'RYBW'):
+    if color_mode in ('CMYW', 'RYBW') or "4-Color" in color_mode:
         actual_color_mode = color_mode
+    elif "8-Color" in color_mode:
+        actual_color_mode = '8-Color'
+    elif "6-Color" in color_mode:
+        actual_color_mode = '6-Color'
+    elif "BW" in color_mode:
+        actual_color_mode = 'BW'
+    elif color_mode == "Merged":
+        actual_color_mode = '8-Color'
     elif num_used_colors <= 2:
         actual_color_mode = 'BW'
     elif num_used_colors <= 4:
@@ -722,23 +746,30 @@ def export_scene_with_bambu_metadata(scene: trimesh.Scene, output_path: str,
     full_color_conf = ColorSystem.get(color_mode)
     full_slot_names = full_color_conf['slots']
     
-    # Create name-to-color mapping from original material IDs
+    # Create name-to-color/material mapping from original material IDs.
+    # material_id is zero-based; extruder_id is one-based.
     name_to_color = {}
+    name_to_material_id = {}
+    auxiliary_white_names = {"Backing", "Board", "Outline"}
     for slot_name in slot_names:
         # Find this slot_name in the full color system
         for mat_id, full_name in enumerate(full_slot_names):
             if slot_name == full_name or slot_name in full_name or full_name in slot_name:
                 if mat_id in preview_colors:
                     name_to_color[slot_name] = tuple(preview_colors[mat_id][:3])
+                    name_to_material_id[slot_name] = mat_id
                     break
         
-        # Fallback: "Board" is the SVG backing plate (always white); other
-        # unrecognised names fall back to gray.
+        # Fallback: auxiliary backing/outline meshes are separate geometry but
+        # print with the white filament slot. Other unrecognised names fall
+        # back to gray on slot 1 rather than creating an out-of-range filament.
         if slot_name not in name_to_color:
-            if slot_name == "Board" and 0 in preview_colors:
+            if slot_name in auxiliary_white_names and 0 in preview_colors:
                 name_to_color[slot_name] = tuple(preview_colors[0][:3])
+                name_to_material_id[slot_name] = 0
             else:
                 name_to_color[slot_name] = (200, 200, 200)
+                name_to_material_id[slot_name] = 0
     
     print(f"[BAMBU_3MF] Color mapping: {list(name_to_color.keys())}")
     
@@ -752,8 +783,9 @@ def export_scene_with_bambu_metadata(scene: trimesh.Scene, output_path: str,
             continue
 
         color_rgb = name_to_color.get(slot_name, (200, 200, 200))
-        writer.add_mesh(mesh, slot_name, color_rgb)
-        print(f"[BAMBU_3MF] Added mesh '{slot_name}' with color {color_rgb}")
+        extruder_id = name_to_material_id.get(slot_name, 0) + 1
+        writer.add_mesh(mesh, slot_name, color_rgb, extruder_id=extruder_id)
+        print(f"[BAMBU_3MF] Added mesh '{slot_name}' with color {color_rgb}, extruder={extruder_id}")
 
     if unmatched:
         raise ValueError(

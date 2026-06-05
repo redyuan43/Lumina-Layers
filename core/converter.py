@@ -2194,15 +2194,17 @@ def _build_voxel_matrix(material_matrix, mask_solid, spacer_thick, structure_mod
         total_layers = optical_layers + spacer_layers
         full_matrix = np.full((total_layers, target_h, target_w), -1, dtype=int)
         
-        full_matrix[0:optical_layers] = bottom_voxels
-        
-        # Use backing_color_id parameter to mark backing layer
         spacer = np.full((target_h, target_w), -1, dtype=int)
         spacer[~mask_transparent] = backing_color_id
-        for z in range(optical_layers, total_layers):
+
+        # Single-sided prints face-up: backing on the bed, optical stack above.
+        for z in range(spacer_layers):
             full_matrix[z] = spacer
-        
-        backing_z_range = (optical_layers, total_layers - 1)
+
+        optical_voxels = np.transpose(material_matrix[..., ::-1], (2, 0, 1))
+        full_matrix[spacer_layers:total_layers] = optical_voxels
+
+        backing_z_range = (0, spacer_layers - 1)
     
     backing_metadata = {
         'backing_color_id': backing_color_id,

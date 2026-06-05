@@ -8,6 +8,9 @@ Validates that:
 import sys
 import os
 import types
+import json
+import zipfile
+import xml.etree.ElementTree as ET
 from unittest.mock import patch, MagicMock
 
 # Add project root to path
@@ -197,3 +200,88 @@ class TestBambuExportGuardrails:
         empty = trimesh.Trimesh(vertices=np.zeros((0, 3)), faces=np.zeros((0, 3), dtype=np.int64))
         with pytest.raises(ValueError, match="empty geometry"):
             writer.add_mesh(empty, "White", (255, 255, 255))
+
+    def test_backing_reuses_white_extruder_without_ninth_filament(self, tmp_path):
+        scene = trimesh.Scene()
+        slot_names = [
+            "Slot 1 (White)",
+            "Slot 2 (Cyan)",
+            "Slot 3 (Magenta)",
+            "Slot 4 (Yellow)",
+            "Slot 5 (Black)",
+            "Slot 6 (Red)",
+            "Slot 7 (Deep Blue)",
+            "Slot 8 (Green)",
+            "Backing",
+        ]
+        preview_colors = {
+            0: [255, 255, 255, 255],
+            1: [0, 163, 222, 255],
+            2: [219, 42, 162, 255],
+            3: [244, 220, 69, 255],
+            4: [0, 0, 0, 255],
+            5: [241, 41, 25, 255],
+            6: [0, 76, 201, 255],
+            7: [172, 232, 153, 255],
+        }
+        for name in slot_names:
+            scene.add_geometry(trimesh.creation.box(extents=[1, 1, 0.2]), geom_name=name)
+
+        out_path = tmp_path / "eight_with_backing.3mf"
+        export_scene_with_bambu_metadata(
+            scene=scene,
+            output_path=str(out_path),
+            slot_names=slot_names,
+            preview_colors=preview_colors,
+            settings={},
+            color_mode="8-Color Max",
+        )
+
+        with zipfile.ZipFile(out_path) as zf:
+            model_settings = zf.read("Metadata/model_settings.config")
+            project_settings = json.loads(zf.read("Metadata/project_settings.config"))
+
+        root = ET.fromstring(model_settings)
+        parts = root.findall("./object/part")
+        extruders_by_name = {}
+        for part in parts:
+            metadata = {
+                item.attrib["key"]: item.attrib["value"]
+                for item in part.findall("metadata")
+            }
+            extruders_by_name[metadata["name"]] = metadata["extruder"]
+
+        assert extruders_by_name["Backing"] == "1"
+        assert "9" not in extruders_by_name.values()
+        assert len(project_settings["filament_colour"]) == 8
+        assert project_settings["filament_colour"][0] == "#FFFFFF"
+
+    def test_svg_board_reuses_white_extruder(self, tmp_path):
+        scene = trimesh.Scene()
+        for name in ["White", "Cyan", "Board"]:
+            scene.add_geometry(trimesh.creation.box(extents=[1, 1, 0.2]), geom_name=name)
+
+        out_path = tmp_path / "board.3mf"
+        export_scene_with_bambu_metadata(
+            scene=scene,
+            output_path=str(out_path),
+            slot_names=["White", "Cyan", "Board"],
+            preview_colors={0: [255, 255, 255, 255], 1: [0, 255, 255, 255]},
+            settings={},
+            color_mode="CMYW",
+        )
+
+        with zipfile.ZipFile(out_path) as zf:
+            root = ET.fromstring(zf.read("Metadata/model_settings.config"))
+            project_settings = json.loads(zf.read("Metadata/project_settings.config"))
+
+        extruders_by_name = {}
+        for part in root.findall("./object/part"):
+            metadata = {
+                item.attrib["key"]: item.attrib["value"]
+                for item in part.findall("metadata")
+            }
+            extruders_by_name[metadata["name"]] = metadata["extruder"]
+
+        assert extruders_by_name["Board"] == "1"
+        assert len(project_settings["filament_colour"]) == 4
