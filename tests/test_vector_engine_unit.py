@@ -232,13 +232,14 @@ class TestRunLengthExtrude:
 
         assert len(result) == 0
 
-    def test_svg_single_sided_face_up_for_8color(self, tmp_path):
-        """Single-sided vector exports should print recipe[0] last/highest.
+    def test_svg_single_sided_face_down_reverses_8color_optical_stack(self, tmp_path):
+        """Single-sided vector exports should stay face-down but flip recipe order.
 
         The user-facing convention is recipe[0] = viewing surface and
-        recipe[N-1] = innermost layer near the backing.  A face-up 3MF must
-        therefore place recipe[N-1] directly above the backing and recipe[0]
-        at the highest optical Z.
+        recipe[N-1] = innermost layer near the backing.  A face-down 3MF keeps
+        the optical stack on the bed and backing above it, but the recipe
+        itself must be reversed so recipe[N-1] is printed first and recipe[0]
+        sits just below the backing.
         """
         svg_file = tmp_path / "dummy.svg"
         svg_file.write_text("<svg/>", encoding="utf-8")
@@ -280,9 +281,9 @@ class TestRunLengthExtrude:
             for name in scene.geometry.keys()
         }
 
-        assert z_by_name["Board"] == pytest.approx((0.0, 1.6))
-        assert z_by_name["Slot 6 (Red)"] == pytest.approx((1.6, 1.68))
-        assert z_by_name["Slot 2 (Cyan)"] == pytest.approx((1.92, 2.0))
+        assert z_by_name["Slot 6 (Red)"] == pytest.approx((0.0, 0.08))
+        assert z_by_name["Slot 2 (Cyan)"] == pytest.approx((0.32, 0.4))
+        assert z_by_name["Board"] == pytest.approx((0.4, 2.0))
 
 
 # =====================================================================

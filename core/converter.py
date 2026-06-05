@@ -983,18 +983,17 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     # Step 5: Build Voxel Matrix
     # Error handling for backing layer marking (Requirement 8.2)
     try:
-        # ========== 5-Color Extended: force single-sided face-up ==========
-        # Face-up: backing on print bed, viewing surface on top.
-        # Base stacks have air at index 0 so their viewing surface sits 1 Z
-        # below extended stacks, keeping ≤4 materials per Z layer.
+        # ========== 5-Color Extended: force single-sided flat mode ==========
+        # Keep the model face-down like other single-sided prints.  The
+        # optical stack order is handled by _build_voxel_matrix.
         if "5-Color Extended" in color_mode:
-            print(f"[CONVERTER] 5-Color Extended: forcing single-sided face-up")
+            print(f"[CONVERTER] 5-Color Extended: forcing single-sided flat stack")
             structure_mode = "单面"
             if enable_relief:
                 print(f"[CONVERTER] 5-Color Extended: 2.5D relief mode disabled (incompatible)")
                 enable_relief = False
-            full_matrix, backing_metadata = _build_voxel_matrix_faceup(
-                material_matrix, mask_solid, spacer_thick, backing_color_id
+            full_matrix, backing_metadata = _build_voxel_matrix(
+                material_matrix, mask_solid, spacer_thick, structure_mode, backing_color_id
             )
         # ========== Cloisonné (掐丝珐琅) Mode ==========
         elif enable_cloisonne:
@@ -2197,14 +2196,16 @@ def _build_voxel_matrix(material_matrix, mask_solid, spacer_thick, structure_mod
         spacer = np.full((target_h, target_w), -1, dtype=int)
         spacer[~mask_transparent] = backing_color_id
 
-        # Single-sided prints face-up: backing on the bed, optical stack above.
-        for z in range(spacer_layers):
+        # Single-sided prints face-down: optical stack on the bed, backing on
+        # top.  The optical recipe is reversed so the LUT's five-layer stack is
+        # not mirrored inside the face-down geometry.
+        optical_voxels = np.transpose(material_matrix[..., ::-1], (2, 0, 1))
+        full_matrix[0:optical_layers] = optical_voxels
+
+        for z in range(optical_layers, total_layers):
             full_matrix[z] = spacer
 
-        optical_voxels = np.transpose(material_matrix[..., ::-1], (2, 0, 1))
-        full_matrix[spacer_layers:total_layers] = optical_voxels
-
-        backing_z_range = (0, spacer_layers - 1)
+        backing_z_range = (optical_layers, optical_layers + spacer_layers - 1)
     
     backing_metadata = {
         'backing_color_id': backing_color_id,

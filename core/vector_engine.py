@@ -186,18 +186,19 @@ class VectorProcessor:
         backing_layer_count = max(1, int(round(thickness_mm / layer_h)))
         backing_height = backing_layer_count * layer_h
         is_double_sided = "双面" in structure_mode or "Double" in structure_mode
-        is_single_sided_face_up = not is_double_sided
+        invert_single_sided_stack = not is_double_sided
 
         t0 = time.perf_counter()
-        if is_single_sided_face_up:
-            # Face-up single-sided exports print the backing first, then the
-            # optical stack from innermost to viewing-surface layer.
+        if invert_single_sided_stack:
+            # Single-sided vector exports stay face-down: the optical layers
+            # remain on the bed and the backing stays above them.  Only the
+            # five-layer optical recipe is reversed inside that face-down stack.
             meshes_by_slot = self._run_length_extrude(
                 matched_shapes, num_layers, layer_h, num_channels,
                 slot_names, scale_factor, extrude_cache=extrude_cache,
-                face_up=True, optical_z_base=backing_height,
+                invert_layer_order=True, optical_z_base=0.0,
             )
-            print(f"[VECTOR] Single-sided face-up: {num_layers} optical layers above {backing_height:.2f}mm backing")
+            print(f"[VECTOR] Single-sided face-down: reversed {num_layers}-layer optical stack below backing")
         else:
             meshes_by_slot = self._run_length_extrude(
                 matched_shapes, num_layers, layer_h, num_channels,
@@ -216,10 +217,7 @@ class VectorProcessor:
             ]
             silhouette = unary_union(all_geoms) if all_geoms else None
 
-        if is_single_sided_face_up:
-            backing_z_start = 0  # face-up: backing at print-bed level
-        else:
-            backing_z_start = num_layers * layer_h
+        backing_z_start = num_layers * layer_h
 
         if thickness_mm > 0 and silhouette is not None and not silhouette.is_empty:
             print(f"[VECTOR] Generating backing: {backing_layer_count} layers ({thickness_mm}mm)")
@@ -503,14 +501,14 @@ class VectorProcessor:
     @staticmethod
     def _run_length_extrude(matched_shapes, num_layers, layer_h,
                             num_channels, slot_names, scale_factor,
-                            extrude_cache=None, face_up=False, optical_z_base=0.0):
+                            extrude_cache=None, invert_layer_order=False, optical_z_base=0.0):
         """Extrude each shape per channel, merging consecutive same-channel
         layers into single volumes (run-length encoding).
 
-        When *face_up* is True the layer order is reversed so that
-        recipe[N-1] sits at the lowest Z (just above *optical_z_base*)
-        and recipe[0] at the highest Z — matching ``_build_voxel_matrix_faceup``
-        semantics used by the raster path for 5-Color Extended.
+        When *invert_layer_order* is True the optical recipe is reversed while
+        preserving the caller's overall model orientation.  For single-sided
+        face-down exports this means recipe[N-1] sits on the bed and recipe[0]
+        sits just below the backing.
         """
         meshes_by_slot = {}
 
@@ -534,7 +532,7 @@ class VectorProcessor:
                     meshes_by_slot[slot_name] = {"meshes": [], "mat_id": ch}
 
                 for run_start, run_end in runs:
-                    if face_up:
+                    if invert_layer_order:
                         inv_start = (num_layers - 1) - run_end
                         inv_end = (num_layers - 1) - run_start
                         z_bot = optical_z_base + inv_start * layer_h

@@ -52,10 +52,11 @@ start_service() {
   echo "[start] ${name} -> ${log_file}"
   (
     cd "$ROOT_DIR"
-    "$@"
-  ) >"$log_file" 2>&1 &
+    setsid nohup "$@" >"$log_file" 2>&1 </dev/null &
+    echo "$!" >"$pid_file"
+  )
 
-  echo "$!" >"$pid_file"
+  sleep 0.2
 }
 
 wait_for_http() {
