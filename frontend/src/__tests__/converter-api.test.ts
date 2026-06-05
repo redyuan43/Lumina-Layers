@@ -185,7 +185,7 @@ describe("convertGenerate", () => {
     mockPost.mockRejectedValueOnce(axiosError);
 
     await expect(convertGenerate("sess-1", generateParams)).rejects.toThrow(
-      "Request failed with status code 422"
+      "Invalid params"
     );
   });
 

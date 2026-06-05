@@ -44,6 +44,20 @@ export function isValidImageType(mimeType: string): boolean {
   return VALID_IMAGE_TYPES.has(mimeType);
 }
 
+function isSvgImage(file: File): boolean {
+  return file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
+}
+
+export function resolveModelingModeForFile(
+  file: File,
+  modelingMode: ModelingMode,
+): ModelingMode {
+  if (modelingMode === ModelingModeEnum.VECTOR && !isSvgImage(file)) {
+    return ModelingModeEnum.HIGH_FIDELITY;
+  }
+  return modelingMode;
+}
+
 // ========== State Interface ==========
 
 export interface ConverterState {
@@ -811,6 +825,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       }
       _previewAbortController = new AbortController();
       const { signal } = _previewAbortController;
+      const modelingMode = resolveModelingModeForFile(
+        state.imageFile,
+        state.modeling_mode,
+      );
 
       set({ isLoading: true, error: null });
       try {
@@ -822,7 +840,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
             auto_bg: state.auto_bg,
             bg_tol: state.bg_tol,
             color_mode: state.color_mode,
-            modeling_mode: state.modeling_mode,
+            modeling_mode: modelingMode,
             quantize_colors: state.quantize_colors,
             enable_cleanup: state.enable_cleanup,
             hue_weight: state.hue_weight,
@@ -907,7 +925,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           auto_bg: state.auto_bg,
           bg_tol: state.bg_tol,
           color_mode: state.color_mode,
-          modeling_mode: state.modeling_mode,
+          modeling_mode: state.imageFile
+            ? resolveModelingModeForFile(state.imageFile, state.modeling_mode)
+            : state.modeling_mode,
           quantize_colors: state.quantize_colors,
           enable_cleanup: state.enable_cleanup,
           hue_weight: state.hue_weight,

@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useConverterStore } from '../../stores/converterStore';
+import {
+  resolveModelingModeForFile,
+  useConverterStore,
+} from '../../stores/converterStore';
+import { ModelingMode } from '../../api/types';
 
 /**
  * Converter_Store 单元测试
@@ -57,6 +61,20 @@ describe('setSelectedColor', () => {
     useConverterStore.getState().setSelectedColor('ff0000');
     useConverterStore.getState().setSelectedColor(null);
     expect(useConverterStore.getState().selectedColor).toBeNull();
+  });
+});
+
+describe('resolveModelingModeForFile', () => {
+  it('keeps Vector mode for SVG files', () => {
+    const file = new File(['<svg></svg>'], 'shape.svg', { type: 'image/svg+xml' });
+    expect(resolveModelingModeForFile(file, ModelingMode.VECTOR)).toBe(ModelingMode.VECTOR);
+  });
+
+  it('uses High-Fidelity when Vector is selected for raster images', () => {
+    const file = new File(['png-data'], 'photo.png', { type: 'image/png' });
+    expect(resolveModelingModeForFile(file, ModelingMode.VECTOR)).toBe(
+      ModelingMode.HIGH_FIDELITY,
+    );
   });
 });
 

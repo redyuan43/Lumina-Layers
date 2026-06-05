@@ -291,6 +291,26 @@ class TestGenerateParameterCompleteness:
         assert regions[0]["matched_hex"] == "#ee0000"
         assert regions[0]["replacement_hex"] == "#00ff00"
 
+    def test_generate_rejects_vector_mode_for_raster_image(self) -> None:
+        """Raster uploads cannot use the SVG-only native vector generator."""
+        sid: str = _create_session_with_preview_and_files(_test_store)
+        _mock_pool.submit = AsyncMock()
+
+        payload = {
+            "session_id": sid,
+            "params": {
+                "lut_name": "test_lut",
+                "modeling_mode": "vector",
+            },
+        }
+
+        with patch("os.path.exists", return_value=True):
+            response = client.post("/api/convert/generate", json=payload)
+
+        assert response.status_code == 409
+        assert "requires an SVG file" in response.json()["detail"]
+        _mock_pool.submit.assert_not_called()
+
 
 # =========================================================================
 # 5. Timeout → HTTP 504 - Requirement 2.3

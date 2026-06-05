@@ -509,6 +509,14 @@ async def convert_generate(
 
     # Convert API ModelingMode enum to core ModelingMode enum
     core_modeling_mode = CoreModelingMode(request.modeling_mode.value)
+    if core_modeling_mode == CoreModelingMode.VECTOR and not image_path.lower().endswith(".svg"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Vector Native mode requires an SVG file. "
+                "Use High-Fidelity or Pixel Art for PNG/JPG images."
+            ),
+        )
 
     # Resolve height_mode for relief branching
     # 解析 height_mode 用于浮雕分支选择

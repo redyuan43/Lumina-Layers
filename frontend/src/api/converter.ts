@@ -1,4 +1,5 @@
 import apiClient from "./client";
+import axios from "axios";
 import type {
   ConvertPreviewRequest,
   ConvertGenerateRequest,
@@ -12,6 +13,21 @@ import type {
   BatchResponse,
   ColorReplaceResponse,
 } from "./types";
+
+function getApiErrorMessage(error: unknown): string | null {
+  if (!axios.isAxiosError(error)) return null;
+
+  const detail = error.response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail
+      .map((item) => item?.msg ?? item?.message ?? String(item))
+      .join("; ");
+  }
+  return error.message || null;
+}
 
 /** 上传图片 + 参数，获取 2D 预览（返回 JSON，含 session_id 和 preview_url） */
 export async function convertPreview(
@@ -37,12 +53,16 @@ export async function convertGenerate(
   sessionId: string,
   params: ConvertGenerateRequest
 ): Promise<GenerateResponse> {
-  const response = await apiClient.post<GenerateResponse>(
-    "/convert/generate",
-    { session_id: sessionId, params },
-    { timeout: 0 }
-  );
-  return response.data;
+  try {
+    const response = await apiClient.post<GenerateResponse>(
+      "/convert/generate",
+      { session_id: sessionId, params },
+      { timeout: 0 }
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error) ?? "生成失败");
+  }
 }
 
 /** 获取可用 LUT 列表 */
