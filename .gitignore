@@ -44,6 +44,7 @@ test_paths.py
 # Debug and test files
 run_debug.bat
 test.png
+.pids/
 
 # Release packages
 *.rar
